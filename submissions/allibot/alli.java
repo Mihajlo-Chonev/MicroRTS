@@ -67,24 +67,12 @@ public class alli extends AIWithComputationBudget {
             Map<String, String> env = System.getenv();
             if (env.containsKey(key)) return;
 
-            Class<?> pe = Class.forName("java.lang.ProcessEnvironment");
-            Field envField = pe.getDeclaredField("theEnvironment");
-            envField.setAccessible(true);
-            Map<String, String> envMap = (Map<String, String>) envField.get(null);
-            envMap.putIfAbsent(key, value);
-
-            Field ciField = pe.getDeclaredField("theCaseInsensitiveEnvironment");
-            ciField.setAccessible(true);
-            Map<String, String> ciEnv = (Map<String, String>) ciField.get(null);
-            ciEnv.putIfAbsent(key, value);
+            Field m = env.getClass().getDeclaredField("m");
+            m.setAccessible(true);
+            Map<String, String> mutable = (Map<String, String>) m.get(env);
+            mutable.putIfAbsent(key, value);
         } catch (Exception ignored) {
-            try {
-                Map<String, String> env = System.getenv();
-                Field m = env.getClass().getDeclaredField("m");
-                m.setAccessible(true);
-                Map<String, String> mutable = (Map<String, String>) m.get(env);
-                mutable.putIfAbsent(key, value);
-            } catch (Exception ignoredToo) { }
+            // If we cannot mutate, continue without throwing; downstream code will use existing env.
         }
     }
         
