@@ -211,6 +211,69 @@ See [GPU_SETUP.md](GPU_SETUP.md) for detailed HPC instructions.
 
 ---
 
+## Self-Reported Tournament Results (Optional)
+
+Submitters are encouraged to include self-reported benchmark results with their submission. These let you share performance numbers obtained using your preferred model on your own hardware — which may differ from what is available on the official competition server.
+
+### What to include
+
+Add a `results.json` file alongside your agent code (e.g., `src/ai/abstraction/submissions/your_team/results.json`). Run `benchmark_arena.py` against the six built-in leaderboard opponents (not against other submissions) and fill in the results.
+
+The format mirrors the official `benchmark_results/leaderboard.json` schema with a few extra metadata fields:
+
+```json
+{
+  "self_reported": true,
+  "submitter": "your_team_name",
+  "agent_class": "ai.abstraction.submissions.your_team.YourAgent",
+  "model": "qwen3:14b",
+  "hardware": "NVIDIA RTX 4090, 64 GB RAM",
+  "date": "2026-03-01",
+  "notes": "Optional: anything relevant about your setup.",
+
+  "version": "2.0",
+  "format": "single-elimination",
+  "map": "maps/8x8/basesWorkers8x8.xml",
+  "max_cycles": 5000,
+  "games_per_matchup": 1,
+
+  "score": 96.0,
+  "grade": "A+",
+  "eliminated_at": "CoacAI",
+
+  "opponents": {
+    "RandomBiasedAI": { "wins": 1, "draws": 0, "losses": 0, "avg_game_score": 1.2, "weighted_points": 12.0 },
+    "HeavyRush":      { "wins": 1, "draws": 0, "losses": 0, "avg_game_score": 1.2, "weighted_points": 24.0 },
+    "LightRush":      { "wins": 1, "draws": 0, "losses": 0, "avg_game_score": 1.2, "weighted_points": 18.0 },
+    "WorkerRush":     { "wins": 1, "draws": 0, "losses": 0, "avg_game_score": 1.0, "weighted_points": 15.0 },
+    "Tiamat":         { "wins": 1, "draws": 0, "losses": 0, "avg_game_score": 1.2, "weighted_points": 24.0 },
+    "CoacAI":         { "wins": 0, "draws": 0, "losses": 1, "avg_game_score": 0.0, "weighted_points": 0.0  }
+  }
+}
+```
+
+See `src/ai/abstraction/submissions/example_team/results.json` for a filled-in example.
+
+### How to generate your results
+
+```bash
+# Run the benchmark arena against the six built-in opponents
+export OLLAMA_MODEL="your-preferred-model"
+python3 benchmark_arena.py
+
+# Results are written to benchmark_results/benchmark_<timestamp>.json
+# Copy the relevant entry into your submission's results.json
+```
+
+### Important caveats
+
+- Self-reported results are **not verified** and are separate from official competition scores.
+- Official scores are always run by the organizers on the competition server using the server's available model (`llama3.1:8b` currently).
+- Self-reported results are useful context — they let reviewers see how your agent performs with a more capable model, and help identify whether a weaker official score is a model-capability issue vs. a prompt/strategy issue.
+- Only report results against the six built-in leaderboard opponents. Do not report results against other submissions.
+
+---
+
 ## Submission
 
 Competition submission details will be announced on the [IEEE WCCI 2026 website](https://attend.ieee.org/wcci-2026/competitions/).
