@@ -284,17 +284,13 @@
         <div class="match-grid">
             <div class="player-panel p1">
                 <h3>Player 1 (AI1)</h3>
-                <select class="agent-select" id="ai1-select">
-                    <option value="">Loading agents...</option>
-                </select>
+                <select class="agent-select" id="ai1-select"></select>
                 <div class="agent-desc" id="ai1-desc"></div>
             </div>
             <div class="vs-divider">VS</div>
             <div class="player-panel p2">
                 <h3>Player 2 (AI2)</h3>
-                <select class="agent-select" id="ai2-select">
-                    <option value="">Loading agents...</option>
-                </select>
+                <select class="agent-select" id="ai2-select"></select>
                 <div class="agent-desc" id="ai2-desc"></div>
             </div>
         </div>
@@ -339,6 +335,54 @@
     <script>
     (function () {
         'use strict';
+
+        // Static agent list — always available even without the match server
+        var FALLBACK_AGENTS = {
+            "Baseline": [
+                { "class": "ai.RandomBiasedAI", "name": "RandomBiasedAI", "description": "Random but prefers useful actions", "requires_llm": false },
+                { "class": "ai.RandomAI", "name": "RandomAI", "description": "Purely random actions", "requires_llm": false },
+                { "class": "ai.PassiveAI", "name": "PassiveAI", "description": "Does nothing", "requires_llm": false }
+            ],
+            "Rush": [
+                { "class": "ai.abstraction.WorkerRush", "name": "WorkerRush", "description": "Aggressive worker rush", "requires_llm": false },
+                { "class": "ai.abstraction.LightRush", "name": "LightRush", "description": "Builds light units aggressively", "requires_llm": false },
+                { "class": "ai.abstraction.HeavyRush", "name": "HeavyRush", "description": "Builds heavy units aggressively", "requires_llm": false },
+                { "class": "ai.abstraction.RangedRush", "name": "RangedRush", "description": "Builds ranged units aggressively", "requires_llm": false }
+            ],
+            "Competition Winner": [
+                { "class": "ai.competition.tiamat.Tiamat", "name": "Tiamat", "description": "CoG 2017/2018 champion", "requires_llm": false },
+                { "class": "ai.coac.CoacAI", "name": "CoacAI", "description": "CoG 2020 champion", "requires_llm": false }
+            ],
+            "LLM": [
+                { "class": "ai.abstraction.ollama", "name": "Ollama LLM", "description": "Pure LLM agent via Ollama", "requires_llm": true },
+                { "class": "ai.abstraction.HybridLLMRush", "name": "HybridLLMRush", "description": "Rule-based + periodic LLM strategy switching", "requires_llm": true },
+                { "class": "ai.abstraction.StrategicLLMAgent", "name": "StrategicLLMAgent", "description": "8 strategies + tactical params from LLM", "requires_llm": true },
+                { "class": "ai.mcts.llmguided.LLMInformedMCTS", "name": "LLMInformedMCTS", "description": "MCTS with LLM policy priors", "requires_llm": true }
+            ],
+            "Submission": [
+                { "class": "ai.abstraction.submissions.allibot.alli", "name": "AlliBot", "description": "Search+LLM (LLMInformedMCTS) with Alli heuristics as fallback", "requires_llm": true },
+                { "class": "ai.abstraction.submissions.boom_or_rush_bot.BoomRushBotOllama", "name": "Boom/Rush Bot", "description": "Uses Ollama to choose between WorkerRush, LightRush, and BoomEconomy", "requires_llm": true },
+                { "class": "ai.abstraction.submissions.chase.ChaseBot", "name": "Chase", "description": "Hybrid LLM-guided bot with GPT-5 strategic consultation", "requires_llm": true },
+                { "class": "ai.abstraction.submissions.crush.CRush", "name": "CRush", "description": "Adaptive ranged rush bot with tactical formations", "requires_llm": false },
+                { "class": "ai.abstraction.submissions.example_team.WorkerRushLLMAgent", "name": "Example Team", "description": "Simple WorkerRush wrapper demonstrating the submission format", "requires_llm": false },
+                { "class": "ai.abstraction.submissions.hope.hope", "name": "HOPE", "description": "Hybrid Ollama Plus Extrapolation: uses Ollama and MCTS with prediction", "requires_llm": true },
+                { "class": "ai.mcts.submissions.jmurr.JMurrAgent", "name": "jmurr", "description": "Evaluates states from the opponent's perspective for scoring", "requires_llm": false },
+                { "class": "ai.mcts.submissions.nick_mcts.NickMCTS", "name": "Nick MCTS", "description": "NaiveMCTS with modified evaluation and worker rush policy", "requires_llm": false },
+                { "class": "ai.mcts.submissions.penguin_bot.MCTSAgent", "name": "PenguinBot", "description": "NaiveMCTS bot with periodic Ollama strategy guidance", "requires_llm": true },
+                { "class": "ai.mcts.submissions.xiebot.XieBot", "name": "xiebot", "description": "Hybrid MCTS bot with Ollama-guided macro strategy switching", "requires_llm": true },
+                { "class": "ai.abstraction.submissions.yebot.yebot", "name": "yebot", "description": "Pure LLM (Cloud DeepSeek) with economy/military/attack prompts", "requires_llm": true }
+            ]
+        };
+
+        var FALLBACK_MAPS = [
+            "maps/4x4/basesWorkers4x4.xml",
+            "maps/8x8/basesWorkers8x8.xml",
+            "maps/8x8/FourBasesWorkers8x8.xml",
+            "maps/10x10/basesWorkers10x10.xml",
+            "maps/12x12/FourBasesWorkers12x12.xml",
+            "maps/16x16/basesWorkers16x16.xml",
+            "maps/24x24/basesWorkers24x24.xml"
+        ];
 
         // State
         var agentsData = {};      // class -> info
@@ -399,7 +443,7 @@
                 .catch(function () {
                     serverOnline = false;
                     serverDot.className = 'server-dot offline';
-                    serverStatusText.textContent = 'Not connected - start match_server.py';
+                    serverStatusText.textContent = 'Not connected - start match_server.py to run matches';
                     btnFight.disabled = true;
                 });
         }
@@ -652,6 +696,15 @@
         }
 
         // --- Init ---
+        // Populate dropdowns immediately with static agent list
+        populateAgents(FALLBACK_AGENTS);
+        populateMaps(FALLBACK_MAPS, "maps/8x8/basesWorkers8x8.xml");
+        // Default: LightRush (P1) vs RandomBiasedAI (P2) for a quick demo
+        ai1Select.value = 'ai.abstraction.LightRush';
+        ai2Select.value = 'ai.RandomBiasedAI';
+        updateDesc('ai1');
+        updateDesc('ai2');
+        // Try to connect to server (will override with full agent/map list if available)
         checkServer();
         // Re-check periodically
         setInterval(checkServer, 15000);
