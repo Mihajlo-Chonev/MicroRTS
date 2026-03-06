@@ -88,6 +88,29 @@
         .setting-group select:focus,
         .setting-group input:focus { border-color: var(--accent); outline: none; }
 
+        /* Map preview */
+        .map-preview-wrap {
+            display: flex;
+            align-items: start;
+            gap: 1rem;
+            flex-wrap: wrap;
+        }
+        .map-preview {
+            background: var(--bg-primary);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 0.4rem;
+            display: none;
+        }
+        .map-preview.visible { display: inline-block; }
+        .map-preview canvas { image-rendering: pixelated; display: block; }
+        .map-info {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-top: 0.25rem;
+            text-align: center;
+        }
+
         /* Fight button */
         .btn-fight {
             padding: 0.65rem 2rem;
@@ -389,18 +412,26 @@ python3 tournament/match_server.py --port 8080</code></pre>
             </div>
         </div>
 
-        <div class="settings-row">
-            <div class="setting-group">
-                <label>Map</label>
-                <select id="map-select">
-                    <option value="maps/8x8/basesWorkers8x8.xml">basesWorkers8x8</option>
-                </select>
+        <div class="map-preview-wrap">
+            <div style="flex:1; min-width: 200px;">
+                <div class="settings-row">
+                    <div class="setting-group">
+                        <label>Map</label>
+                        <select id="map-select">
+                            <option value="maps/8x8/basesWorkers8x8.xml">basesWorkers8x8</option>
+                        </select>
+                    </div>
+                    <div class="setting-group">
+                        <label>Max Cycles</label>
+                        <input type="number" id="max-cycles" value="3000" min="100" max="10000" step="100">
+                    </div>
+                    <button class="btn-fight" id="btn-fight" disabled>Run Match</button>
+                </div>
             </div>
-            <div class="setting-group">
-                <label>Max Cycles</label>
-                <input type="number" id="max-cycles" value="3000" min="100" max="10000" step="100">
+            <div class="map-preview" id="map-preview">
+                <canvas id="map-canvas" width="160" height="160"></canvas>
+                <div class="map-info" id="map-info"></div>
             </div>
-            <button class="btn-fight" id="btn-fight" disabled>Run Match</button>
         </div>
 
         <div class="result-panel" id="result-panel">
@@ -632,7 +663,137 @@ python3 tournament/match_server.py --port 8080</code></pre>
                 html += '<option value="' + escapeHtml(m) + '"' + sel + '>' + escapeHtml(label) + '</option>';
             }
             mapSelect.innerHTML = html;
+            loadMapPreview(mapSelect.value);
         }
+
+        // --- Map Preview ---
+
+        var mapPreviewEl = document.getElementById('map-preview');
+        var mapCanvas = document.getElementById('map-canvas');
+        var mapCtx = mapCanvas.getContext('2d');
+        var mapInfoEl = document.getElementById('map-info');
+        var mapCache = {};  // path -> parsed data
+        var PREVIEW_SIZE = 160;
+
+        function loadMapPreview(mapPath) {
+            if (!mapPath) { mapPreviewEl.className = 'map-preview'; return; }
+
+            // Use cache if available
+            if (mapCache[mapPath]) {
+                drawMapPreview(mapCache[mapPath]);
+                return;
+            }
+
+            // Try server first, fall back to client-side XML fetch
+            if (serverOnline) {
+                fetch(getServerUrl() + '/api/map?path=' + encodeURIComponent(mapPath))
+                    .then(function (r) { return r.ok ? r.json() : null; })
+                    .then(function (data) {
+                        if (data && data.width) {
+                            mapCache[mapPath] = data;
+                            drawMapPreview(data);
+                        }
+                    })
+                    .catch(function () {});
+            } else {
+                mapPreviewEl.className = 'map-preview';
+            }
+        }
+
+        function drawMapPreview(data) {
+            var w = data.width;
+            var h = data.height;
+            var cellSize = Math.floor(Math.min(PREVIEW_SIZE / w, PREVIEW_SIZE / h));
+            cellSize = Math.max(cellSize, 3); // minimum 3px per cell
+            var canvasW = cellSize * w;
+            var canvasH = cellSize * h;
+            mapCanvas.width = canvasW;
+            mapCanvas.height = canvasH;
+            var ctx = mapCtx;
+
+            // Background
+            ctx.fillStyle = '#1a1a2e';
+            ctx.fillRect(0, 0, canvasW, canvasH);
+
+            // Grid lines (only if cells big enough)
+            if (cellSize >= 8) {
+                ctx.strokeStyle = '#2a2a3e';
+                ctx.lineWidth = 0.5;
+                for (var gx = 0; gx <= w; gx++) {
+                    ctx.beginPath(); ctx.moveTo(gx * cellSize, 0); ctx.lineTo(gx * cellSize, canvasH); ctx.stroke();
+                }
+                for (var gy = 0; gy <= h; gy++) {
+                    ctx.beginPath(); ctx.moveTo(0, gy * cellSize); ctx.lineTo(canvasW, gy * cellSize); ctx.stroke();
+                }
+            }
+
+            // Terrain
+            if (data.terrain) {
+                for (var ti = 0; ti < data.terrain.length; ti++) {
+                    if (data.terrain[ti] !== '0') {
+                        ctx.fillStyle = '#555';
+                        ctx.fillRect((ti % w) * cellSize, Math.floor(ti / w) * cellSize, cellSize, cellSize);
+                    }
+                }
+            }
+
+            // Units
+            var units = data.units || [];
+            for (var ui = 0; ui < units.length; ui++) {
+                var u = units[ui];
+                var ux = u.x * cellSize;
+                var uy = u.y * cellSize;
+                var pad = Math.max(1, cellSize * 0.1);
+                var type = (u.type || '').toLowerCase();
+
+                var color;
+                if (u.player === 0) color = '#0C7BDC';
+                else if (u.player === 1) color = '#BF3682';
+                else color = '#C2DFAE';
+
+                if (type === 'resource') {
+                    ctx.fillStyle = color;
+                    var cx = ux + cellSize / 2;
+                    var cy = uy + cellSize / 2;
+                    var r = (cellSize - pad * 2) / 2;
+                    ctx.beginPath();
+                    ctx.moveTo(cx, cy - r); ctx.lineTo(cx + r, cy);
+                    ctx.lineTo(cx, cy + r); ctx.lineTo(cx - r, cy);
+                    ctx.closePath(); ctx.fill();
+                } else if (type === 'base' || type === 'barracks') {
+                    ctx.fillStyle = color;
+                    ctx.fillRect(ux + pad, uy + pad, cellSize - pad * 2, cellSize - pad * 2);
+                    if (cellSize >= 12) {
+                        ctx.fillStyle = '#fff';
+                        ctx.font = 'bold ' + Math.max(7, cellSize * 0.4) + 'px sans-serif';
+                        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                        ctx.fillText(type === 'base' ? 'B' : 'K', ux + cellSize / 2, uy + cellSize / 2);
+                    }
+                } else {
+                    ctx.fillStyle = color;
+                    ctx.beginPath();
+                    ctx.arc(ux + cellSize / 2, uy + cellSize / 2, (cellSize - pad * 2) / 2, 0, Math.PI * 2);
+                    ctx.fill();
+                    if (cellSize >= 12) {
+                        ctx.fillStyle = '#fff';
+                        ctx.font = 'bold ' + Math.max(7, cellSize * 0.4) + 'px sans-serif';
+                        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                        ctx.fillText(type.charAt(0).toUpperCase(), ux + cellSize / 2, uy + cellSize / 2);
+                    }
+                }
+            }
+
+            // Show info
+            var p0units = units.filter(function (u) { return u.player === 0; }).length;
+            var p1units = units.filter(function (u) { return u.player === 1; }).length;
+            var res = units.filter(function (u) { return u.player === -1; }).length;
+            mapInfoEl.textContent = w + 'x' + h + ' \u2014 ' + p0units + 'v' + p1units + ' units, ' + res + ' resources';
+            mapPreviewEl.className = 'map-preview visible';
+        }
+
+        mapSelect.addEventListener('change', function () {
+            loadMapPreview(mapSelect.value);
+        });
 
         function updateDesc(player) {
             var sel = player === 'ai1' ? ai1Select : ai2Select;

@@ -28,6 +28,7 @@ import tempfile
 import threading
 import time
 import uuid
+import xml.etree.ElementTree as ET
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
@@ -198,6 +199,48 @@ def discover_maps():
         rel = xml.relative_to(PROJECT_ROOT)
         maps.append(str(rel))
     return maps
+
+
+def parse_map_xml(map_path):
+    """Parse a map XML file into a JSON-friendly dict."""
+    full_path = PROJECT_ROOT / map_path
+    if not full_path.exists() or not full_path.is_file():
+        return None
+    # Ensure path is under maps/ to prevent traversal
+    try:
+        full_path.resolve().relative_to(PROJECT_ROOT.resolve())
+    except ValueError:
+        return None
+    tree = ET.parse(str(full_path))
+    root = tree.getroot()
+    width = int(root.get("width", 0))
+    height = int(root.get("height", 0))
+    terrain = ""
+    terrain_el = root.find("terrain")
+    if terrain_el is not None and terrain_el.text:
+        terrain = terrain_el.text.strip()
+    units = []
+    for u in root.iter("rts.units.Unit"):
+        units.append({
+            "type": u.get("type", ""),
+            "player": int(u.get("player", -1)),
+            "x": int(u.get("x", 0)),
+            "y": int(u.get("y", 0)),
+            "resources": int(u.get("resources", 0)),
+        })
+    players = []
+    for p in root.iter("rts.Player"):
+        players.append({
+            "ID": int(p.get("ID", 0)),
+            "resources": int(p.get("resources", 0)),
+        })
+    return {
+        "width": width,
+        "height": height,
+        "terrain": terrain,
+        "units": units,
+        "players": players,
+    }
 
 
 def write_config(ai1, ai2, map_location, max_cycles):
@@ -401,6 +444,19 @@ class MatchHandler(BaseHTTPRequestHandler):
         if path == "/api/maps":
             maps = discover_maps()
             self.send_json({"maps": maps, "default": DEFAULT_MAP})
+            return
+
+        if path == "/api/map":
+            qs = parse_qs(parsed.query)
+            map_path = qs.get("path", [None])[0]
+            if not map_path:
+                self.send_json({"error": "path parameter required"}, 400)
+                return
+            data = parse_map_xml(map_path)
+            if not data:
+                self.send_json({"error": "Map not found"}, 404)
+                return
+            self.send_json(data)
             return
 
         if path.startswith("/api/trace/"):
